@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { useAuth } from '@/hooks/useAuth';
 import { usePeople } from '@/hooks/usePeople';
 import { addPerson } from '@/lib/firestore';
@@ -13,8 +13,7 @@ import { Button } from '@/components/ui/Button';
 import type { Person } from '@/types';
 
 export default function DashboardPage() {
-  const { user, logout } = useAuth();
-  const router = useRouter();
+  const { user } = useAuth();
   const { people, loading } = usePeople(user?.uid);
   const [search, setSearch] = useState('');
   const [showAdd, setShowAdd] = useState(false);
@@ -22,11 +21,6 @@ export default function DashboardPage() {
   const filtered = people.filter((p) =>
     p.name.toLowerCase().includes(search.toLowerCase()),
   );
-
-  async function handleLogout() {
-    await logout();
-    router.push('/login');
-  }
 
   async function handleAdd(data: Pick<Person, 'name' | 'birthDate' | 'notes'>) {
     if (!user) return;
@@ -39,9 +33,9 @@ export default function DashboardPage() {
       {/* Header */}
       <div className="mb-6 flex items-center justify-between">
         <h1 className="text-2xl font-semibold text-purple-900">Gifted</h1>
-        <Button variant="ghost" onClick={handleLogout}>
-          Sign out
-        </Button>
+        <Link href="/settings" className="rounded-xl px-3 py-2 text-sm text-purple-600 hover:bg-purple-100">
+          Settings
+        </Link>
       </div>
 
       {/* Controls */}
