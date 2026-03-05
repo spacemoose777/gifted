@@ -1,2 +1,1 @@
-// Implemented in Phase 3
-export {};
+export { useAuth } from '@/contexts/AuthContext';

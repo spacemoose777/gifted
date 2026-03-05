@@ -1,10 +1,14 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import './globals.css';
+import { AuthProvider } from '@/contexts/AuthContext';
 
 export const metadata: Metadata = {
   title: 'Gifted',
   description: 'Store gift ideas and get birthday reminders',
   manifest: '/manifest.json',
+};
+
+export const viewport: Viewport = {
   themeColor: '#c4b5fd',
 };
 
@@ -16,7 +20,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className="antialiased bg-purple-50 min-h-screen font-sans">
-        {children}
+        <AuthProvider>{children}</AuthProvider>
       </body>
     </html>
   );
