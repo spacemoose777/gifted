@@ -9,6 +9,7 @@ import {
   onAuthStateChanged,
 } from 'firebase/auth';
 import { auth } from '@/lib/firebase';
+import { initCrypto, clearCryptoKey } from '@/lib/crypto';
 
 interface AuthContextValue {
   user: FirebaseUser | null;
@@ -25,7 +26,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (firebaseUser) {
+        await initCrypto(firebaseUser.uid);
+      } else {
+        clearCryptoKey();
+      }
       setUser(firebaseUser);
       setLoading(false);
     });
