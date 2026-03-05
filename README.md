@@ -86,7 +86,43 @@ firebase deploy --only firestore:rules
 
 ### Cloud Functions
 
-See `/functions/README.md` (added in Phase 8).
+The scheduled function runs daily at 08:00 UTC and sends SendGrid reminder emails at 30, 14, and 7 days before each person's birthday.
+
+#### 1. Install Firebase CLI and log in
+
+```bash
+npm install -g firebase-tools
+firebase login
+```
+
+#### 2. Set the SendGrid API key as a secret
+
+```bash
+firebase secrets:set SENDGRID_API_KEY
+# paste your key when prompted
+```
+
+#### 3. Set non-sensitive function config
+
+Copy `functions/.env.example` to `functions/.env` and fill in values:
+
+```
+SENDGRID_FROM_EMAIL=you@example.com
+APP_URL=https://your-vercel-url.vercel.app
+```
+
+#### 4. Deploy
+
+```bash
+cd functions
+npm run build
+cd ..
+firebase deploy --only functions
+```
+
+#### 5. Test manually
+
+In the Firebase console → Functions → sendBirthdayReminders → click **Test function**. Check logs to confirm emails were dispatched.
 
 ---
 
