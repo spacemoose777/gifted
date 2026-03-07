@@ -28,7 +28,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
-        await initCrypto(firebaseUser.uid);
+        try {
+          await initCrypto(firebaseUser.uid);
+        } catch (err) {
+          console.error('initCrypto failed:', err);
+        }
       } else {
         clearCryptoKey();
       }
