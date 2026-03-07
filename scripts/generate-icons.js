@@ -1,6 +1,6 @@
 // Generates 192x192 and 512x512 PNG icons for the PWA.
 // No external dependencies — uses Node.js built-in zlib.
-// Design: lavender (#c4b5fd) background, white "G" drawn as pixels.
+// Design: lavender (#c4b5fd) background, white ribbon bow.
 
 const zlib = require('zlib');
 const fs = require('fs');
@@ -36,20 +36,15 @@ function chunk(type, data) {
 }
 
 function makePNG(width, height, pixels) {
-  // pixels: Uint8Array of width*height*3 (RGB)
   const sig = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
-
   const ihdr = Buffer.alloc(13);
   ihdr.writeUInt32BE(width, 0);
   ihdr.writeUInt32BE(height, 4);
-  ihdr[8] = 8; // bit depth
-  ihdr[9] = 2; // RGB
-  // bytes 10-12: compression=0, filter=0, interlace=0
+  ihdr[8] = 8; ihdr[9] = 2;
 
-  // Add filter byte (0 = None) per row
   const raw = Buffer.alloc(height * (1 + width * 3));
   for (let y = 0; y < height; y++) {
-    raw[y * (1 + width * 3)] = 0; // filter type
+    raw[y * (1 + width * 3)] = 0;
     for (let x = 0; x < width; x++) {
       const src = (y * width + x) * 3;
       const dst = y * (1 + width * 3) + 1 + x * 3;
@@ -59,70 +54,111 @@ function makePNG(width, height, pixels) {
     }
   }
 
-  const compressed = zlib.deflateSync(raw, { level: 9 });
-
   return Buffer.concat([
     sig,
     chunk('IHDR', ihdr),
-    chunk('IDAT', compressed),
+    chunk('IDAT', zlib.deflateSync(raw, { level: 9 })),
     chunk('IEND', Buffer.alloc(0)),
   ]);
 }
 
-// ─── Icon drawing ─────────────────────────────────────────────────────────────
+// ─── Drawing helpers ──────────────────────────────────────────────────────────
 
-// Draw a "G" glyph scaled to the icon size.
-// The glyph is defined on a 7x9 grid of on/off pixels.
-const G_GLYPH = [
-  [0,1,1,1,1,0,0],
-  [1,1,0,0,1,1,0],
-  [1,0,0,0,0,0,0],
-  [1,0,0,0,0,0,0],
-  [1,0,0,1,1,1,0],
-  [1,0,0,0,0,1,0],
-  [1,1,0,0,0,1,0],
-  [0,1,1,1,1,1,0],
-  [0,0,0,0,0,0,0],
-];
-const GLYPH_COLS = G_GLYPH[0].length;
-const GLYPH_ROWS = G_GLYPH.length;
+function setPixel(pixels, size, x, y, r, g, b) {
+  if (x < 0 || x >= size || y < 0 || y >= size) return;
+  const idx = (Math.round(y) * size + Math.round(x)) * 3;
+  pixels[idx] = r; pixels[idx + 1] = g; pixels[idx + 2] = b;
+}
 
-function drawIcon(size) {
-  const bg = [196, 181, 253]; // #c4b5fd lavender
-  const fg = [255, 255, 255]; // white
+/** Filled ellipse — anti-aliased via partial coverage. */
+function fillEllipse(pixels, size, cx, cy, rx, ry, r, g, b) {
+  const x0 = Math.max(0, Math.floor(cx - rx - 1));
+  const x1 = Math.min(size - 1, Math.ceil(cx + rx + 1));
+  const y0 = Math.max(0, Math.floor(cy - ry - 1));
+  const y1 = Math.min(size - 1, Math.ceil(cy + ry + 1));
 
-  const pixels = new Uint8Array(size * size * 3);
-
-  // Fill background
-  for (let i = 0; i < size * size; i++) {
-    pixels[i * 3] = bg[0];
-    pixels[i * 3 + 1] = bg[1];
-    pixels[i * 3 + 2] = bg[2];
-  }
-
-  // Scale glyph to ~50% of icon width, centred
-  const scale = Math.floor(size * 0.5 / GLYPH_COLS);
-  const glyphW = GLYPH_COLS * scale;
-  const glyphH = GLYPH_ROWS * scale;
-  const offsetX = Math.floor((size - glyphW) / 2);
-  const offsetY = Math.floor((size - glyphH) / 2);
-
-  for (let gy = 0; gy < GLYPH_ROWS; gy++) {
-    for (let gx = 0; gx < GLYPH_COLS; gx++) {
-      if (!G_GLYPH[gy][gx]) continue;
-      for (let py = 0; py < scale; py++) {
-        for (let px = 0; px < scale; px++) {
-          const ix = offsetX + gx * scale + px;
-          const iy = offsetY + gy * scale + py;
-          if (ix < 0 || ix >= size || iy < 0 || iy >= size) continue;
-          const idx = (iy * size + ix) * 3;
-          pixels[idx] = fg[0];
-          pixels[idx + 1] = fg[1];
-          pixels[idx + 2] = fg[2];
-        }
+  for (let py = y0; py <= y1; py++) {
+    for (let px = x0; px <= x1; px++) {
+      const dx = (px - cx) / rx;
+      const dy = (py - cy) / ry;
+      const d = dx * dx + dy * dy;
+      if (d <= 1.0) {
+        const idx = (py * size + px) * 3;
+        pixels[idx] = r; pixels[idx + 1] = g; pixels[idx + 2] = b;
       }
     }
   }
+}
+
+/** Hollow ellipse ring (outer - inner). */
+function strokeEllipse(pixels, size, cx, cy, rx, ry, thickness, r, g, b) {
+  fillEllipse(pixels, size, cx, cy, rx, ry, r, g, b);
+  const bg = [196, 181, 253]; // lavender bg
+  fillEllipse(pixels, size, cx, cy, rx - thickness, ry - thickness, bg[0], bg[1], bg[2]);
+}
+
+/** Filled rectangle. */
+function fillRect(pixels, size, x, y, w, h, r, g, b) {
+  for (let py = Math.max(0, y); py < Math.min(size, y + h); py++) {
+    for (let px = Math.max(0, x); px < Math.min(size, x + w); px++) {
+      const idx = (py * size + px) * 3;
+      pixels[idx] = r; pixels[idx + 1] = g; pixels[idx + 2] = b;
+    }
+  }
+}
+
+/** Diagonal ribbon tail — drawn as a parallelogram. */
+function fillTail(pixels, size, x1, y1, x2, y2, width, r, g, b) {
+  const len = Math.hypot(x2 - x1, y2 - y1);
+  const steps = Math.ceil(len * 2);
+  const hw = width / 2;
+  // Normal vector
+  const nx = -(y2 - y1) / len;
+  const ny = (x2 - x1) / len;
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+    const mx = x1 + (x2 - x1) * t;
+    const my = y1 + (y2 - y1) * t;
+    for (let w = -hw; w <= hw; w += 0.5) {
+      setPixel(pixels, size, Math.round(mx + nx * w), Math.round(my + ny * w), r, g, b);
+    }
+  }
+}
+
+// ─── Bow drawing ──────────────────────────────────────────────────────────────
+
+function drawIcon(size) {
+  const BG  = [196, 181, 253]; // #c4b5fd lavender
+  const BOW = [255, 255, 255]; // white loops + tails
+  const KNOT = [167, 139, 250]; // #a78bfa slightly darker lavender for knot
+
+  const pixels = new Uint8Array(size * size * 3);
+  // Background
+  for (let i = 0; i < size * size; i++) {
+    pixels[i * 3] = BG[0]; pixels[i * 3 + 1] = BG[1]; pixels[i * 3 + 2] = BG[2];
+  }
+
+  const cx = size * 0.5;
+  const cy = size * 0.42;
+  const t  = size * 0.055; // stroke thickness
+
+  // ── Ribbon tails (draw first so loops sit on top) ──
+  const tailTop = cy + size * 0.08;
+  const tailW   = size * 0.09;
+  fillTail(pixels, size, cx, tailTop, cx - size * 0.12, size * 0.82, tailW, ...BOW);
+  fillTail(pixels, size, cx, tailTop, cx + size * 0.12, size * 0.82, tailW, ...BOW);
+
+  // ── Left loop ──
+  const lx = cx - size * 0.22;
+  strokeEllipse(pixels, size, lx, cy, size * 0.22, size * 0.28, t, ...BOW);
+
+  // ── Right loop ──
+  const rx = cx + size * 0.22;
+  strokeEllipse(pixels, size, rx, cy, size * 0.22, size * 0.28, t, ...BOW);
+
+  // ── Center knot (solid, covers the loop join) ──
+  fillEllipse(pixels, size, cx, cy, size * 0.11, size * 0.10, ...BOW);
+  fillEllipse(pixels, size, cx, cy, size * 0.07, size * 0.065, ...KNOT);
 
   return pixels;
 }

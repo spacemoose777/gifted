@@ -4,6 +4,7 @@ import type { Gift } from '@/types';
 
 interface GiftCardProps {
   gift: Gift;
+  occasionLabel?: string;
   onClick: () => void;
 }
 
@@ -17,7 +18,16 @@ const typeBg: Record<Gift['type'], string> = {
   experience: 'bg-green-100 text-green-700',
 };
 
-export function GiftCard({ gift, onClick }: GiftCardProps) {
+const occasionBg: Record<string, string> = {
+  christmas: 'bg-red-100 text-red-700',
+  birthday: 'bg-yellow-100 text-yellow-700',
+};
+
+export function GiftCard({ gift, occasionLabel, onClick }: GiftCardProps) {
+  const showOccasion = gift.occasion && gift.occasion !== 'birthday';
+  const occLabel = occasionLabel ?? (gift.occasion === 'christmas' ? 'Christmas' : gift.occasion);
+  const occBg = occasionBg[gift.occasion] ?? 'bg-pink-100 text-pink-700';
+
   return (
     <button
       onClick={onClick}
@@ -36,11 +46,16 @@ export function GiftCard({ gift, onClick }: GiftCardProps) {
           <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${typeBg[gift.type]}`}>
             {typeLabel[gift.type]}
           </span>
+          {showOccasion && (
+            <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${occBg}`}>
+              {occLabel}
+            </span>
+          )}
           {gift.priceRange && (
             <span className="text-xs text-purple-400">{gift.priceRange}</span>
           )}
           {gift.given && (
-            <span className="rounded-full bg-sage-100 bg-teal-100 px-2 py-0.5 text-xs font-medium text-teal-700">
+            <span className="rounded-full bg-teal-100 px-2 py-0.5 text-xs font-medium text-teal-700">
               Given
             </span>
           )}

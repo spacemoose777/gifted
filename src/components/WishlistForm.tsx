@@ -5,38 +5,29 @@ import { Input } from '@/components/ui/Input';
 import { Textarea } from '@/components/ui/Textarea';
 import { Select } from '@/components/ui/Select';
 import { Button } from '@/components/ui/Button';
-import type { CalendarEvent, Gift, GiftType } from '@/types';
+import type { WishlistItem, GiftType } from '@/types';
 
-type GiftFormData = Pick<
-  Gift,
-  'itemName' | 'description' | 'type' | 'options' | 'watchOuts' | 'priceRange' | 'given' | 'givenTo' | 'occasion'
+type WishlistFormData = Pick<
+  WishlistItem,
+  'itemName' | 'description' | 'type' | 'options' | 'watchOuts' | 'priceRange' | 'acquired'
 >;
 
-interface GiftFormProps {
-  initial?: GiftFormData;
-  events?: CalendarEvent[];
-  onSubmit: (data: GiftFormData) => Promise<void>;
+interface WishlistFormProps {
+  initial?: WishlistFormData;
+  onSubmit: (data: WishlistFormData) => Promise<void>;
   onCancel: () => void;
 }
 
-export function GiftForm({ initial, events = [], onSubmit, onCancel }: GiftFormProps) {
+export function WishlistForm({ initial, onSubmit, onCancel }: WishlistFormProps) {
   const [itemName, setItemName] = useState(initial?.itemName ?? '');
   const [description, setDescription] = useState(initial?.description ?? '');
   const [type, setType] = useState<GiftType>(initial?.type ?? 'gift');
   const [options, setOptions] = useState(initial?.options ?? '');
   const [watchOuts, setWatchOuts] = useState(initial?.watchOuts ?? '');
   const [priceRange, setPriceRange] = useState(initial?.priceRange ?? '');
-  const [given, setGiven] = useState(initial?.given ?? false);
-  const [givenTo, setGivenTo] = useState(initial?.givenTo ?? '');
-  const [occasion, setOccasion] = useState(initial?.occasion ?? 'birthday');
+  const [acquired, setAcquired] = useState(initial?.acquired ?? false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-
-  const occasionOptions = [
-    { value: 'birthday', label: 'Birthday' },
-    { value: 'christmas', label: 'Christmas' },
-    ...events.map((e) => ({ value: e.id, label: e.name })),
-  ];
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -50,9 +41,7 @@ export function GiftForm({ initial, events = [], onSubmit, onCancel }: GiftFormP
         options: options.trim(),
         watchOuts: watchOuts.trim(),
         priceRange: priceRange.trim(),
-        given,
-        givenTo: given && givenTo.trim() ? givenTo.trim() : null,
-        occasion,
+        acquired,
       });
     } catch {
       setError('Something went wrong. Please try again.');
@@ -64,7 +53,7 @@ export function GiftForm({ initial, events = [], onSubmit, onCancel }: GiftFormP
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-4 max-h-[70vh] overflow-y-auto pr-1">
       <Input
-        id="gift-name"
+        id="wish-name"
         label="Item name"
         value={itemName}
         onChange={(e) => setItemName(e.target.value)}
@@ -72,14 +61,7 @@ export function GiftForm({ initial, events = [], onSubmit, onCancel }: GiftFormP
         autoFocus
       />
       <Select
-        id="gift-occasion"
-        label="Occasion"
-        value={occasion}
-        onChange={(e) => setOccasion(e.target.value)}
-        options={occasionOptions}
-      />
-      <Select
-        id="gift-type"
+        id="wish-type"
         label="Type"
         value={type}
         onChange={(e) => setType(e.target.value as GiftType)}
@@ -89,51 +71,42 @@ export function GiftForm({ initial, events = [], onSubmit, onCancel }: GiftFormP
         ]}
       />
       <Input
-        id="gift-price"
+        id="wish-price"
         label="Price range"
         placeholder="e.g. $20–50"
         value={priceRange}
         onChange={(e) => setPriceRange(e.target.value)}
       />
       <Textarea
-        id="gift-description"
+        id="wish-description"
         label="Description"
-        placeholder="What is it, where to get it…"
+        placeholder="What is it, where to find it…"
         value={description}
         onChange={(e) => setDescription(e.target.value)}
       />
       <Textarea
-        id="gift-options"
+        id="wish-options"
         label="Options / variants"
         placeholder="Colours, sizes, styles…"
         value={options}
         onChange={(e) => setOptions(e.target.value)}
       />
       <Textarea
-        id="gift-watchouts"
+        id="wish-watchouts"
         label="Watch-outs"
-        placeholder="Things to avoid…"
+        placeholder="Things to note…"
         value={watchOuts}
         onChange={(e) => setWatchOuts(e.target.value)}
       />
       <label className="flex items-center gap-2 text-sm text-purple-900 cursor-pointer">
         <input
           type="checkbox"
-          checked={given}
-          onChange={(e) => setGiven(e.target.checked)}
+          checked={acquired}
+          onChange={(e) => setAcquired(e.target.checked)}
           className="rounded accent-purple-500"
         />
-        Already given
+        Already got this
       </label>
-      {given && (
-        <Input
-          id="gift-givento"
-          label="Given to"
-          placeholder="e.g. Christmas 2024"
-          value={givenTo}
-          onChange={(e) => setGivenTo(e.target.value)}
-        />
-      )}
       {error && <p className="text-sm text-red-500">{error}</p>}
       <div className="flex gap-2 justify-end pt-1">
         <Button type="button" variant="ghost" onClick={onCancel}>Cancel</Button>

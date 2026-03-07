@@ -19,13 +19,22 @@ const APP_URL = defineString('APP_URL');
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function daysUntilBirthday(birthDate: string): number {
+const REMINDER_DAYS = [30, 14, 7];
+
+/** Days until the next occurrence of a MM-DD date (ignores year). */
+function daysUntilAnnual(mmdd: string): number {
   const today = new Date();
   today.setUTCHours(0, 0, 0, 0);
-  const [, month, day] = birthDate.split('-').map(Number);
+  const [month, day] = mmdd.split('-').map(Number);
   const next = new Date(Date.UTC(today.getUTCFullYear(), month - 1, day));
   if (next < today) next.setUTCFullYear(today.getUTCFullYear() + 1);
   return Math.round((next.getTime() - today.getTime()) / 86_400_000);
+}
+
+/** Days until birthday — handles YYYY-MM-DD and 0000-MM-DD. */
+function daysUntilBirthday(birthDate: string): number {
+  const parts = birthDate.split('-');
+  return daysUntilAnnual(`${parts[1]}-${parts[2]}`);
 }
 
 function firstNameFromEmail(email: string): string {
@@ -33,14 +42,20 @@ function firstNameFromEmail(email: string): string {
   return raw.charAt(0).toUpperCase() + raw.slice(1);
 }
 
-function buildEmail(recipientFirstName: string, personName: string, days: number, appUrl: string): string {
-  const daysText = days === 1 ? '1 day' : `${days} days`;
+function buildEmail(
+  recipientFirstName: string,
+  subject: string,
+  body: string,
+  appUrl: string,
+  ctaLabel = 'Open Gifted →',
+  ctaPath = '/',
+): string {
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Birthday Reminder</title>
+  <title>${subject}</title>
 </head>
 <body style="margin:0;padding:0;background:#f5f0ff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
   <table width="100%" cellpadding="0" cellspacing="0" style="padding:40px 16px;">
@@ -52,18 +67,13 @@ function buildEmail(recipientFirstName: string, personName: string, days: number
               <p style="margin:0 0 4px;font-size:22px;font-weight:600;color:#4c1d95;">Gifted</p>
               <hr style="border:none;border-top:1px solid #ede9fe;margin:16px 0;" />
               <p style="font-size:16px;color:#2d1b69;margin:0 0 12px;">Kia ora ${recipientFirstName},</p>
-              <p style="font-size:16px;color:#2d1b69;margin:0 0 24px;">
-                Just a heads-up — <strong>${personName}</strong>'s birthday is in <strong>${daysText}</strong>.
-                Now's a great time to sort out a gift!
-              </p>
-              <a href="${appUrl}/people"
+              <p style="font-size:16px;color:#2d1b69;margin:0 0 24px;">${body}</p>
+              <a href="${appUrl}${ctaPath}"
                  style="display:inline-block;background:#a78bfa;color:#ffffff;text-decoration:none;font-size:15px;font-weight:600;padding:12px 28px;border-radius:12px;">
-                View gift ideas →
+                ${ctaLabel}
               </a>
               <hr style="border:none;border-top:1px solid #ede9fe;margin:28px 0 16px;" />
-              <p style="font-size:12px;color:#a78bfa;margin:0;">
-                You're receiving this because you have ${personName} saved in Gifted.
-              </p>
+              <p style="font-size:12px;color:#a78bfa;margin:0;">You're receiving this from Gifted.</p>
             </td>
           </tr>
         </table>
@@ -76,8 +86,6 @@ function buildEmail(recipientFirstName: string, personName: string, days: number
 
 // ─── Scheduled function ───────────────────────────────────────────────────────
 
-const REMINDER_DAYS = [30, 14, 7];
-
 export const sendBirthdayReminders = onSchedule(
   {
     schedule: '0 8 * * *',
@@ -89,7 +97,6 @@ export const sendBirthdayReminders = onSchedule(
     const fromEmail = SENDGRID_FROM_EMAIL.value();
     const appUrl = APP_URL.value();
 
-    // List all users (handles up to 1000; sufficient for a personal app)
     const { users } = await auth.listUsers();
     logger.info(`Processing ${users.length} user(s)`);
 
@@ -97,31 +104,83 @@ export const sendBirthdayReminders = onSchedule(
 
     for (const user of users) {
       if (!user.email) continue;
+      const recipientFirstName = firstNameFromEmail(user.email);
 
-      const peopleSnap = await db
-        .collection(`users/${user.uid}/people`)
-        .get();
+      // ── Birthday reminders ──────────────────────────────────────────────
+      const peopleSnap = await db.collection(`users/${user.uid}/people`).get();
 
       for (const personDoc of peopleSnap.docs) {
         const data = personDoc.data();
         const birthDate = data.birthDate as string | undefined;
         const name = data.name as string | undefined;
-
         if (!birthDate || !name) continue;
 
         const days = daysUntilBirthday(birthDate);
         if (!REMINDER_DAYS.includes(days)) continue;
 
-        const recipientFirstName = firstNameFromEmail(user.email);
+        const daysText = `${days} days`;
+        const subject = `Reminder: ${name}'s birthday is in ${daysText}`;
+        const body = `Just a heads-up — <strong>${name}</strong>'s birthday is in <strong>${daysText}</strong>. Now's a great time to sort out a gift!`;
 
         await sgMail.send({
           to: user.email,
           from: fromEmail,
-          subject: `Reminder: ${name}'s birthday is in ${days} days`,
-          html: buildEmail(recipientFirstName, name, days, appUrl),
+          subject,
+          html: buildEmail(recipientFirstName, subject, body, appUrl, 'View gift ideas →', '/'),
         });
+        logger.info(`Birthday reminder → ${user.email}: ${name} in ${days}d`);
+        emailsSent++;
+      }
 
-        logger.info(`Sent reminder to ${user.email} — ${name} in ${days} days`);
+      // ── Event reminders ─────────────────────────────────────────────────
+      const eventsSnap = await db.collection(`users/${user.uid}/events`).get();
+
+      for (const eventDoc of eventsSnap.docs) {
+        const data = eventDoc.data();
+        const date = data.date as string | undefined;
+        const eventName = data.name as string | undefined;
+        const personIds = (data.personIds as string[]) ?? [];
+        if (!date || !eventName) continue;
+
+        const days = daysUntilAnnual(date);
+        if (!REMINDER_DAYS.includes(days)) continue;
+
+        // Look up people names for multi-person events
+        const names: string[] = [];
+        for (const pid of personIds) {
+          const pDoc = await db.doc(`users/${user.uid}/people/${pid}`).get();
+          if (pDoc.exists) names.push((pDoc.data()?.name as string).split(' ')[0]);
+        }
+        const namesLabel = names.length > 0 ? names.join(' & ') + '\'s ' : '';
+
+        const daysText = `${days} days`;
+        const subject = `Reminder: ${namesLabel}${eventName} is in ${daysText}`;
+        const body = `Just a heads-up — <strong>${namesLabel}${eventName}</strong> is in <strong>${daysText}</strong>.`;
+
+        await sgMail.send({
+          to: user.email,
+          from: fromEmail,
+          subject,
+          html: buildEmail(recipientFirstName, subject, body, appUrl, 'Open Gifted →', '/'),
+        });
+        logger.info(`Event reminder → ${user.email}: ${eventName} in ${days}d`);
+        emailsSent++;
+      }
+
+      // ── Christmas reminder ──────────────────────────────────────────────
+      const christmasDays = daysUntilAnnual('12-25');
+      if ((REMINDER_DAYS as number[]).includes(christmasDays)) {
+        const daysText = `${christmasDays} days`;
+        const subject = `Reminder: Christmas is in ${daysText}`;
+        const body = `Christmas is in <strong>${daysText}</strong>. Time to check your gift lists!`;
+
+        await sgMail.send({
+          to: user.email,
+          from: fromEmail,
+          subject,
+          html: buildEmail(recipientFirstName, subject, body, appUrl, 'Open Gifted →', '/'),
+        });
+        logger.info(`Christmas reminder → ${user.email} in ${christmasDays}d`);
         emailsSent++;
       }
     }

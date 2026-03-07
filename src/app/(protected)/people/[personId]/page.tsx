@@ -5,36 +5,50 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/hooks/useAuth';
 import { useGifts } from '@/hooks/useGifts';
-import { getPerson, updatePerson, deletePerson, addGift, updateGift, deleteGift } from '@/lib/firestore';
+import { useEvents } from '@/hooks/useEvents';
+import { usePeople } from '@/hooks/usePeople';
+import {
+  getPerson, updatePerson, deletePerson,
+  addGift, updateGift, deleteGift,
+  addEvent, updateEvent, deleteEvent,
+} from '@/lib/firestore';
 import { PersonForm } from '@/components/PersonForm';
 import { GiftCard } from '@/components/GiftCard';
 import { GiftForm } from '@/components/GiftForm';
+import { EventCard } from '@/components/EventCard';
+import { EventForm } from '@/components/EventForm';
 import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
-import type { Gift, GiftFilters, GiftType, Person } from '@/types';
+import type { CalendarEvent, Gift, GiftFilters, GiftType, Person } from '@/types';
+
+type GiftFormData = Pick<Gift, 'itemName' | 'description' | 'type' | 'options' | 'watchOuts' | 'priceRange' | 'given' | 'givenTo' | 'occasion'>;
+type EventFormData = Pick<CalendarEvent, 'name' | 'date' | 'type' | 'personIds'>;
 
 function formatDate(iso: string): string {
-  const d = new Date(iso + 'T00:00:00');
-  return d.toLocaleDateString('en-NZ', { day: 'numeric', month: 'long', year: 'numeric' });
+  const [year, mm, dd] = iso.split('-').map(Number);
+  const d = new Date(2000, mm - 1, dd);
+  const base = d.toLocaleDateString('en-NZ', { day: 'numeric', month: 'long' });
+  return year === 0 ? base : `${base} ${year}`;
 }
-
-type GiftFormData = Pick<Gift, 'itemName' | 'description' | 'type' | 'options' | 'watchOuts' | 'priceRange' | 'given' | 'givenTo'>;
 
 export default function PersonDetailPage({ params }: { params: { personId: string } }) {
   const { user } = useAuth();
   const router = useRouter();
   const { gifts, loading: giftsLoading } = useGifts(user?.uid, params.personId);
+  const { events: allEvents } = useEvents(user?.uid);
+  const { people } = usePeople(user?.uid);
 
   const [person, setPerson] = useState<Person | null>(null);
   const [personLoading, setPersonLoading] = useState(true);
   const [showEditPerson, setShowEditPerson] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
-  // Gift modal state
   const [showAddGift, setShowAddGift] = useState(false);
   const [editingGift, setEditingGift] = useState<Gift | null>(null);
 
-  // Filters
+  const [showAddEvent, setShowAddEvent] = useState(false);
+  const [editingEvent, setEditingEvent] = useState<CalendarEvent | null>(null);
+
   const [filters, setFilters] = useState<GiftFilters>({});
 
   useEffect(() => {
@@ -45,15 +59,35 @@ export default function PersonDetailPage({ params }: { params: { personId: strin
     });
   }, [user, params.personId]);
 
-  // Unique price ranges for filter dropdown
+  // Events involving this person
+  const personEvents = allEvents.filter((e) => e.personIds.includes(params.personId));
+
+  // Build occasion label map for gifts
+  const eventMap = Object.fromEntries(allEvents.map((e) => [e.id, e.name]));
+  function occasionLabel(occasion: string): string {
+    if (occasion === 'birthday') return 'Birthday';
+    if (occasion === 'christmas') return 'Christmas';
+    return eventMap[occasion] ?? occasion;
+  }
+
   const priceRanges = Array.from(new Set(gifts.map((g) => g.priceRange).filter(Boolean)));
 
   const filteredGifts = gifts.filter((g) => {
     if (filters.type && g.type !== filters.type) return false;
     if (filters.priceRange && g.priceRange !== filters.priceRange) return false;
     if (filters.given !== undefined && g.given !== filters.given) return false;
+    if (filters.occasion && g.occasion !== filters.occasion) return false;
     return true;
   });
+
+  function setFilter<K extends keyof GiftFilters>(key: K, value: GiftFilters[K] | '') {
+    setFilters((prev) => {
+      const next = { ...prev };
+      if (value === '') delete next[key];
+      else next[key] = value as GiftFilters[K];
+      return next;
+    });
+  }
 
   async function handleEditPerson(data: Pick<Person, 'name' | 'birthDate' | 'notes'>) {
     if (!user) return;
@@ -87,16 +121,22 @@ export default function PersonDetailPage({ params }: { params: { personId: strin
     setEditingGift(null);
   }
 
-  function setFilter<K extends keyof GiftFilters>(key: K, value: GiftFilters[K] | '') {
-    setFilters((prev) => {
-      const next = { ...prev };
-      if (value === '') {
-        delete next[key];
-      } else {
-        next[key] = value as GiftFilters[K];
-      }
-      return next;
-    });
+  async function handleAddEvent(data: EventFormData) {
+    if (!user) return;
+    await addEvent(user.uid, data);
+    setShowAddEvent(false);
+  }
+
+  async function handleUpdateEvent(data: EventFormData) {
+    if (!user || !editingEvent) return;
+    await updateEvent(user.uid, editingEvent.id, data);
+    setEditingEvent(null);
+  }
+
+  async function handleDeleteEvent(eventId: string) {
+    if (!user || !confirm('Delete this event?')) return;
+    await deleteEvent(user.uid, eventId);
+    setEditingEvent(null);
   }
 
   if (personLoading) {
@@ -118,9 +158,7 @@ export default function PersonDetailPage({ params }: { params: { personId: strin
 
   return (
     <main className="mx-auto max-w-2xl px-4 py-6">
-      <Link href="/" className="mb-4 inline-block text-sm text-purple-500 hover:underline">
-        ← Dashboard
-      </Link>
+      <Link href="/" className="mb-4 inline-block text-sm text-purple-500 hover:underline">← Dashboard</Link>
 
       {/* Person header */}
       <div className="mb-6 rounded-2xl bg-white p-5 shadow-sm">
@@ -139,16 +177,36 @@ export default function PersonDetailPage({ params }: { params: { personId: strin
         </div>
       </div>
 
-      {/* Gift list header */}
+      {/* ── Events ───────────────────────────────────────────── */}
+      <div className="mb-3 flex items-center justify-between">
+        <h2 className="text-lg font-semibold text-purple-900">Events</h2>
+        <Button onClick={() => setShowAddEvent(true)}>+ Add event</Button>
+      </div>
+      {personEvents.length === 0 ? (
+        <div className="mb-6 rounded-2xl bg-white p-5 text-center text-purple-400 shadow-sm text-sm">
+          No events. Add an anniversary or other recurring date.
+        </div>
+      ) : (
+        <div className="mb-6 flex flex-col gap-3">
+          {personEvents.map((event) => (
+            <EventCard
+              key={event.id}
+              event={event}
+              people={people}
+              onClick={() => setEditingEvent(event)}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* ── Gifts ────────────────────────────────────────────── */}
       <div className="mb-3 flex items-center justify-between">
         <h2 className="text-lg font-semibold text-purple-900">Gift ideas</h2>
         <Button onClick={() => setShowAddGift(true)}>+ Add gift</Button>
       </div>
 
-      {/* Filters — only show when there are gifts */}
       {gifts.length > 0 && (
         <div className="mb-3 flex flex-wrap gap-2">
-          {/* Type filter */}
           <select
             value={filters.type ?? ''}
             onChange={(e) => setFilter('type', e.target.value as GiftType | '')}
@@ -159,7 +217,19 @@ export default function PersonDetailPage({ params }: { params: { personId: strin
             <option value="experience">Experience</option>
           </select>
 
-          {/* Price range filter */}
+          <select
+            value={filters.occasion ?? ''}
+            onChange={(e) => setFilter('occasion', e.target.value)}
+            className="rounded-xl border border-purple-200 bg-white px-3 py-1.5 text-xs text-purple-700 focus:outline-none focus:ring-2 focus:ring-purple-400"
+          >
+            <option value="">All occasions</option>
+            <option value="birthday">Birthday</option>
+            <option value="christmas">Christmas</option>
+            {personEvents.map((e) => (
+              <option key={e.id} value={e.id}>{e.name}</option>
+            ))}
+          </select>
+
           {priceRanges.length > 0 && (
             <select
               value={filters.priceRange ?? ''}
@@ -167,13 +237,10 @@ export default function PersonDetailPage({ params }: { params: { personId: strin
               className="rounded-xl border border-purple-200 bg-white px-3 py-1.5 text-xs text-purple-700 focus:outline-none focus:ring-2 focus:ring-purple-400"
             >
               <option value="">All prices</option>
-              {priceRanges.map((r) => (
-                <option key={r} value={r}>{r}</option>
-              ))}
+              {priceRanges.map((r) => <option key={r} value={r}>{r}</option>)}
             </select>
           )}
 
-          {/* Given filter */}
           <select
             value={filters.given === undefined ? '' : String(filters.given)}
             onChange={(e) => {
@@ -187,19 +254,14 @@ export default function PersonDetailPage({ params }: { params: { personId: strin
             <option value="true">Given</option>
           </select>
 
-          {/* Clear filters */}
           {Object.keys(filters).length > 0 && (
-            <button
-              onClick={() => setFilters({})}
-              className="rounded-xl px-3 py-1.5 text-xs text-purple-500 hover:bg-purple-100"
-            >
+            <button onClick={() => setFilters({})} className="rounded-xl px-3 py-1.5 text-xs text-purple-500 hover:bg-purple-100">
               Clear filters
             </button>
           )}
         </div>
       )}
 
-      {/* Gift list */}
       {giftsLoading ? (
         <div className="flex justify-center py-8">
           <div className="h-6 w-6 animate-spin rounded-full border-4 border-purple-200 border-t-purple-500" />
@@ -211,39 +273,67 @@ export default function PersonDetailPage({ params }: { params: { personId: strin
       ) : (
         <div className="flex flex-col gap-3">
           {filteredGifts.map((gift) => (
-            <GiftCard key={gift.id} gift={gift} onClick={() => setEditingGift(gift)} />
+            <GiftCard
+              key={gift.id}
+              gift={gift}
+              occasionLabel={occasionLabel(gift.occasion)}
+              onClick={() => setEditingGift(gift)}
+            />
           ))}
         </div>
       )}
 
-      {/* Add gift modal */}
+      {/* ── Modals ───────────────────────────────────────────── */}
       {showAddGift && (
         <Modal title="Add gift idea" onClose={() => setShowAddGift(false)}>
-          <GiftForm onSubmit={handleAddGift} onCancel={() => setShowAddGift(false)} />
+          <GiftForm
+            events={personEvents}
+            onSubmit={handleAddGift}
+            onCancel={() => setShowAddGift(false)}
+          />
         </Modal>
       )}
-
-      {/* Edit gift modal */}
       {editingGift && (
         <Modal title="Edit gift idea" onClose={() => setEditingGift(null)}>
           <GiftForm
             initial={editingGift}
+            events={personEvents}
             onSubmit={handleUpdateGift}
             onCancel={() => setEditingGift(null)}
           />
           <div className="mt-3 border-t border-purple-100 pt-3">
-            <Button
-              variant="ghost"
-              onClick={() => handleDeleteGift(editingGift.id)}
-              className="text-red-500 hover:bg-red-50 hover:text-red-600"
-            >
+            <Button variant="ghost" onClick={() => handleDeleteGift(editingGift.id)} className="text-red-500 hover:bg-red-50 hover:text-red-600">
               Delete gift
             </Button>
           </div>
         </Modal>
       )}
-
-      {/* Edit person modal */}
+      {showAddEvent && (
+        <Modal title="Add event" onClose={() => setShowAddEvent(false)}>
+          <EventForm
+            allPeople={people}
+            lockedPersonId={params.personId}
+            onSubmit={handleAddEvent}
+            onCancel={() => setShowAddEvent(false)}
+          />
+        </Modal>
+      )}
+      {editingEvent && (
+        <Modal title="Edit event" onClose={() => setEditingEvent(null)}>
+          <EventForm
+            initial={editingEvent}
+            allPeople={people}
+            lockedPersonId={params.personId}
+            onSubmit={handleUpdateEvent}
+            onCancel={() => setEditingEvent(null)}
+          />
+          <div className="mt-3 border-t border-purple-100 pt-3">
+            <Button variant="ghost" onClick={() => handleDeleteEvent(editingEvent.id)} className="text-red-500 hover:bg-red-50 hover:text-red-600">
+              Delete event
+            </Button>
+          </div>
+        </Modal>
+      )}
       {showEditPerson && (
         <Modal title="Edit person" onClose={() => setShowEditPerson(false)}>
           <PersonForm
