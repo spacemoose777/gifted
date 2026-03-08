@@ -116,11 +116,19 @@ export const sendBirthdayReminders = onSchedule(
         if (!birthDate || !name) continue;
 
         const days = daysUntilBirthday(birthDate);
-        if (!REMINDER_DAYS.includes(days)) continue;
+        const isToday = days === 0;
+        if (!isToday && !REMINDER_DAYS.includes(days)) continue;
 
-        const daysText = `${days} days`;
-        const subject = `Reminder: ${name}'s birthday is in ${daysText}`;
-        const body = `Just a heads-up — <strong>${name}</strong>'s birthday is in <strong>${daysText}</strong>. Now's a great time to sort out a gift!`;
+        let subject: string;
+        let body: string;
+        if (isToday) {
+          subject = `Today is ${name}'s birthday! 🎂`;
+          body = `It's <strong>${name}</strong>'s birthday today! Wishing them a wonderful day 🎉`;
+        } else {
+          const daysText = `${days} days`;
+          subject = `Reminder: ${name}'s birthday is in ${daysText}`;
+          body = `Just a heads-up — <strong>${name}</strong>'s birthday is in <strong>${daysText}</strong>. Now's a great time to sort out a gift!`;
+        }
 
         await sgMail.send({
           to: user.email,
