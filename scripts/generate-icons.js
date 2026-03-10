@@ -1,6 +1,6 @@
 // Generates 192x192 and 512x512 PNG icons for the PWA.
 // No external dependencies — uses Node.js built-in zlib.
-// Design: lavender (#c4b5fd) background, white ribbon bow.
+// Design: lavender (#c4b5fd) background, purple gift box with ribbon.
 
 const zlib = require('zlib');
 const fs = require('fs');
@@ -125,12 +125,15 @@ function fillTail(pixels, size, x1, y1, x2, y2, width, r, g, b) {
   }
 }
 
-// ─── Bow drawing ──────────────────────────────────────────────────────────────
+// ─── Gift box drawing ─────────────────────────────────────────────────────────
 
 function drawIcon(size) {
-  const BG  = [196, 181, 253]; // #c4b5fd lavender
-  const BOW = [255, 255, 255]; // white loops + tails
-  const KNOT = [167, 139, 250]; // #a78bfa slightly darker lavender for knot
+  const BG      = [196, 181, 253]; // #c4b5fd lavender background
+  const LID     = [124,  58, 237]; // #7c3aed dark purple lid
+  const BOX     = [167, 139, 250]; // #a78bfa medium purple box body
+  const BOX2    = [144, 97,  249]; // #9061f9 slightly darker right-side shading
+  const RIBBON  = [221, 214, 254]; // #ddd6fe light lavender ribbon
+  const BOW_MID = [124,  58, 237]; // #7c3aed dark purple bow knot
 
   const pixels = new Uint8Array(size * size * 3);
   // Background
@@ -138,27 +141,49 @@ function drawIcon(size) {
     pixels[i * 3] = BG[0]; pixels[i * 3 + 1] = BG[1]; pixels[i * 3 + 2] = BG[2];
   }
 
-  const cx = size * 0.5;
-  const cy = size * 0.42;
-  const t  = size * 0.055; // stroke thickness
+  // Box proportions (centred, with padding)
+  const pad  = Math.round(size * 0.12);
+  const boxL = pad;
+  const boxR = size - pad;
+  const boxW = boxR - boxL;
 
-  // ── Ribbon tails (draw first so loops sit on top) ──
-  const tailTop = cy + size * 0.08;
-  const tailW   = size * 0.09;
-  fillTail(pixels, size, cx, tailTop, cx - size * 0.12, size * 0.82, tailW, ...BOW);
-  fillTail(pixels, size, cx, tailTop, cx + size * 0.12, size * 0.82, tailW, ...BOW);
+  const lidTop = Math.round(size * 0.28);
+  const lidH   = Math.round(size * 0.16);
+  const bodyTop = lidTop + lidH;
+  const bodyH  = Math.round(size * 0.42);
+  const bodyBot = bodyTop + bodyH;
 
-  // ── Left loop ──
-  const lx = cx - size * 0.22;
-  strokeEllipse(pixels, size, lx, cy, size * 0.22, size * 0.28, t, ...BOW);
+  // Ribbon width & x position
+  const ribW  = Math.round(boxW * 0.14);
+  const ribX  = Math.round(size * 0.5 - ribW / 2);
 
-  // ── Right loop ──
-  const rx = cx + size * 0.22;
-  strokeEllipse(pixels, size, rx, cy, size * 0.22, size * 0.28, t, ...BOW);
+  // Box body (draw right shading first, then main colour)
+  const shadX = Math.round(boxL + boxW * 0.62);
+  fillRect(pixels, size, shadX, bodyTop, boxR - shadX, bodyH, ...BOX2);
+  fillRect(pixels, size, boxL, bodyTop, boxW, bodyH, ...BOX);
+  // Right-side depth shading
+  fillRect(pixels, size, shadX, bodyTop, boxR - shadX, bodyH, ...BOX2);
 
-  // ── Center knot (solid, covers the loop join) ──
-  fillEllipse(pixels, size, cx, cy, size * 0.11, size * 0.10, ...BOW);
-  fillEllipse(pixels, size, cx, cy, size * 0.07, size * 0.065, ...KNOT);
+  // Ribbon stripe on body
+  fillRect(pixels, size, ribX, bodyTop, ribW, bodyH, ...RIBBON);
+
+  // Box lid (drawn over body top edge)
+  fillRect(pixels, size, boxL, lidTop, boxW, lidH, ...LID);
+
+  // Ribbon stripe on lid
+  fillRect(pixels, size, ribX, lidTop, ribW, lidH, ...RIBBON);
+
+  // ── Bow loops (small, sitting on top of lid) ──
+  const bowCY  = lidTop - Math.round(size * 0.04);
+  const bowCX  = size * 0.5;
+  const loopRX = Math.round(size * 0.14);
+  const loopRY = Math.round(size * 0.09);
+  // Left loop
+  fillEllipse(pixels, size, bowCX - loopRX * 0.85, bowCY, loopRX, loopRY, ...RIBBON);
+  // Right loop
+  fillEllipse(pixels, size, bowCX + loopRX * 0.85, bowCY, loopRX, loopRY, ...RIBBON);
+  // Knot centre (overdraw)
+  fillEllipse(pixels, size, bowCX, bowCY, Math.round(size * 0.07), Math.round(size * 0.06), ...BOW_MID);
 
   return pixels;
 }
