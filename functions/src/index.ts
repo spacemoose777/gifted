@@ -89,7 +89,7 @@ function buildEmail(
 export const sendBirthdayReminders = onSchedule(
   {
     schedule: '0 8 * * *',
-    timeZone: 'UTC',
+    timeZone: 'Pacific/Auckland',
     secrets: [SENDGRID_API_KEY],
   },
   async () => {
