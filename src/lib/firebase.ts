@@ -1,6 +1,6 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
-import { getFirestore, enableIndexedDbPersistence } from 'firebase/firestore';
+import { getFirestore, initializeFirestore, persistentLocalCache } from 'firebase/firestore';
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -14,14 +14,20 @@ const firebaseConfig = {
 const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
 
 export const auth = getAuth(app);
-export const db = getFirestore(app);
 
-if (typeof window !== 'undefined') {
-  enableIndexedDbPersistence(db).catch((err) => {
-    if (err.code === 'failed-precondition') {
-      console.warn('Firestore persistence failed: multiple tabs open.');
-    } else if (err.code === 'unimplemented') {
-      console.warn('Firestore persistence not supported in this browser.');
+// Use persistent local cache (replaces enableIndexedDbPersistence).
+// initializeFirestore is synchronous — persistence is ready immediately,
+// avoiding the race condition where Firestore operations queued before
+// the old async enableIndexedDbPersistence resolved would hang on a
+// poor connection. Falls back to in-memory on SSR.
+export const db = (() => {
+  if (typeof window !== 'undefined') {
+    try {
+      return initializeFirestore(app, { localCache: persistentLocalCache() });
+    } catch {
+      // Already initialized (e.g. Next.js HMR) — return existing instance
+      return getFirestore(app);
     }
-  });
-}
+  }
+  return getFirestore(app);
+})();

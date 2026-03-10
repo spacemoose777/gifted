@@ -1,4 +1,4 @@
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc, getDocFromCache, setDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 
 // Cached derived key — re-used for the lifetime of the session
@@ -47,8 +47,24 @@ async function deriveKey(uid: string, salt: Uint8Array): Promise<CryptoKey> {
  * key, and caches it for the session.
  */
 export async function initCrypto(uid: string): Promise<void> {
+  if (cachedKey) return; // Already initialised this session
+
   const saltRef = doc(db, 'users', uid, 'config', 'encryption');
-  const saltSnap = await getDoc(saltRef);
+
+  // Try the local IndexedDB cache first — instant, works fully offline.
+  // Falls back to a network fetch (with 8s timeout) only if not cached yet
+  // (e.g. first login on a new device).
+  let saltSnap;
+  try {
+    saltSnap = await getDocFromCache(saltRef);
+  } catch {
+    saltSnap = await Promise.race([
+      getDoc(saltRef),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('initCrypto: network timeout')), 8000),
+      ),
+    ]);
+  }
 
   let salt: Uint8Array;
 
