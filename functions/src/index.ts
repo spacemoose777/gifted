@@ -20,11 +20,25 @@ const APP_URL = defineString('APP_URL');
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 const REMINDER_DAYS = [30, 14, 7];
+const TIMEZONE = 'Pacific/Auckland';
+
+/**
+ * Returns today's date in Auckland local time as a UTC midnight Date.
+ * Cloud Functions run in UTC, so `new Date()` gives the UTC clock — which
+ * can be a full day behind NZ time. Using Intl.DateTimeFormat ensures we
+ * treat "today" as what Auckland residents see on their calendar.
+ */
+function todayInAuckland(): Date {
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: TIMEZONE })
+    .format(new Date())
+    .split('-')
+    .map(Number); // [YYYY, MM, DD]
+  return new Date(Date.UTC(parts[0], parts[1] - 1, parts[2]));
+}
 
 /** Days until the next occurrence of a MM-DD date (ignores year). */
 function daysUntilAnnual(mmdd: string): number {
-  const today = new Date();
-  today.setUTCHours(0, 0, 0, 0);
+  const today = todayInAuckland();
   const [month, day] = mmdd.split('-').map(Number);
   const next = new Date(Date.UTC(today.getUTCFullYear(), month - 1, day));
   if (next < today) next.setUTCFullYear(today.getUTCFullYear() + 1);
@@ -89,7 +103,7 @@ function buildEmail(
 export const sendBirthdayReminders = onSchedule(
   {
     schedule: '0 8 * * *',
-    timeZone: 'Pacific/Auckland',
+    timeZone: TIMEZONE,
     secrets: [SENDGRID_API_KEY],
   },
   async () => {
