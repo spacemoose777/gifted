@@ -4,12 +4,21 @@ export interface User {
   createdAt: string; // ISO
 }
 
+export interface Family {
+  id: string;
+  createdBy: string;
+  createdAt: string;
+  inviteCode: string;
+  memberUids: string[];
+}
+
 export interface Person {
   id: string;
   name: string;
   // YYYY-MM-DD when year known, 0000-MM-DD when year unknown
   birthDate: string;
   notes: string; // stored encrypted, decrypted at read
+  isPrivate?: boolean; // false (default) = shared with family; true = owner only
   createdAt: string;
   updatedAt: string;
 }
@@ -58,6 +67,7 @@ export interface CalendarEvent {
   date: string;    // MM-DD (annual, no year)
   type: 'anniversary' | 'other';
   personIds: string[];
+  isPrivate?: boolean; // false (default) = shared with family
   createdAt: string;
   updatedAt: string;
 }

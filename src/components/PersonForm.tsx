@@ -30,9 +30,11 @@ function parseBirthDate(birthDate: string) {
   return { yearUnknown: false, fullDate: birthDate, month: '01', day: '01' };
 }
 
+type PersonFormData = Pick<Person, 'name' | 'birthDate' | 'notes'> & { isPrivate: boolean };
+
 interface PersonFormProps {
-  initial?: Pick<Person, 'name' | 'birthDate' | 'notes'>;
-  onSubmit: (data: Pick<Person, 'name' | 'birthDate' | 'notes'>) => Promise<void>;
+  initial?: Pick<Person, 'name' | 'birthDate' | 'notes'> & { isPrivate?: boolean };
+  onSubmit: (data: PersonFormData) => Promise<void>;
   onCancel: () => void;
 }
 
@@ -45,6 +47,7 @@ export function PersonForm({ initial, onSubmit, onCancel }: PersonFormProps) {
   const [fullDate, setFullDate] = useState(parsed.fullDate);
   const [month, setMonth] = useState(parsed.month);
   const [day, setDay] = useState(parsed.day);
+  const [isPrivate, setIsPrivate] = useState(initial?.isPrivate ?? false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -58,7 +61,7 @@ export function PersonForm({ initial, onSubmit, onCancel }: PersonFormProps) {
     }
     setLoading(true);
     try {
-      await onSubmit({ name: name.trim(), birthDate, notes: notes.trim() });
+      await onSubmit({ name: name.trim(), birthDate, notes: notes.trim(), isPrivate });
     } catch {
       setError('Something went wrong. Please try again.');
     } finally {
@@ -127,6 +130,19 @@ export function PersonForm({ initial, onSubmit, onCancel }: PersonFormProps) {
         value={notes}
         onChange={(e) => setNotes(e.target.value)}
       />
+
+      <label className="flex items-center gap-2 cursor-pointer">
+        <input
+          type="checkbox"
+          checked={isPrivate}
+          onChange={(e) => setIsPrivate(e.target.checked)}
+          className="rounded accent-purple-500"
+        />
+        <span className="text-sm text-purple-900">
+          Private <span className="text-purple-400 font-normal">(hide from family)</span>
+        </span>
+      </label>
+
       {error && <p className="text-sm text-red-500">{error}</p>}
       <div className="flex gap-2 justify-end">
         <Button type="button" variant="ghost" onClick={onCancel}>Cancel</Button>

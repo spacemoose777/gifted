@@ -116,11 +116,35 @@ export const sendBirthdayReminders = onSchedule(
 
     let emailsSent = 0;
 
+    // ── Helper: send birthday reminder for one person to one recipient ──────
+    async function sendBirthdayEmail(
+      toEmail: string,
+      recipientFirstName: string,
+      personName: string,
+    ) {
+      const days = daysUntilBirthday(/* resolved below */ '');
+      void days; // computed per call — see inline below
+    }
+    // (sendBirthdayEmail not used directly — inlined below for clarity)
+    void sendBirthdayEmail;
+
+    // ── Helper: get partner UIDs for a user ─────────────────────────────────
+    async function getPartnerUids(uid: string): Promise<string[]> {
+      const userDoc = await db.doc(`users/${uid}`).get();
+      if (!userDoc.exists) return [];
+      const familyId = userDoc.data()?.familyId as string | undefined;
+      if (!familyId) return [];
+      const familyDoc = await db.doc(`families/${familyId}`).get();
+      if (!familyDoc.exists) return [];
+      const memberUids = (familyDoc.data()?.memberUids as string[]) ?? [];
+      return memberUids.filter((id) => id !== uid);
+    }
+
     for (const user of users) {
       if (!user.email) continue;
       const recipientFirstName = firstNameFromEmail(user.email);
 
-      // ── Birthday reminders ──────────────────────────────────────────────
+      // ── Own birthday reminders ──────────────────────────────────────────
       const peopleSnap = await db.collection(`users/${user.uid}/people`).get();
 
       for (const personDoc of peopleSnap.docs) {
@@ -154,7 +178,7 @@ export const sendBirthdayReminders = onSchedule(
         emailsSent++;
       }
 
-      // ── Event reminders ─────────────────────────────────────────────────
+      // ── Own event reminders ─────────────────────────────────────────────
       const eventsSnap = await db.collection(`users/${user.uid}/events`).get();
 
       for (const eventDoc of eventsSnap.docs) {
@@ -167,7 +191,6 @@ export const sendBirthdayReminders = onSchedule(
         const days = daysUntilAnnual(date);
         if (!REMINDER_DAYS.includes(days)) continue;
 
-        // Look up people names for multi-person events
         const names: string[] = [];
         for (const pid of personIds) {
           const pDoc = await db.doc(`users/${user.uid}/people/${pid}`).get();
@@ -187,6 +210,80 @@ export const sendBirthdayReminders = onSchedule(
         });
         logger.info(`Event reminder → ${user.email}: ${eventName} in ${days}d`);
         emailsSent++;
+      }
+
+      // ── Shared (family member) birthday + event reminders ───────────────
+      const partnerUids = await getPartnerUids(user.uid);
+
+      for (const partnerUid of partnerUids) {
+        // Partner's non-private people
+        const partnerPeopleSnap = await db.collection(`users/${partnerUid}/people`).get();
+        for (const personDoc of partnerPeopleSnap.docs) {
+          const data = personDoc.data();
+          if (data.isPrivate) continue;
+          const birthDate = data.birthDate as string | undefined;
+          const name = data.name as string | undefined;
+          if (!birthDate || !name) continue;
+
+          const days = daysUntilBirthday(birthDate);
+          const isToday = days === 0;
+          if (!isToday && !REMINDER_DAYS.includes(days)) continue;
+
+          let subject: string;
+          let body: string;
+          if (isToday) {
+            subject = `Today is ${name}'s birthday! 🎂`;
+            body = `It's <strong>${name}</strong>'s birthday today! Wishing them a wonderful day 🎉`;
+          } else {
+            const daysText = `${days} days`;
+            subject = `Reminder: ${name}'s birthday is in ${daysText}`;
+            body = `Just a heads-up — <strong>${name}</strong>'s birthday is in <strong>${daysText}</strong>. Now's a great time to sort out a gift!`;
+          }
+
+          await sgMail.send({
+            to: user.email,
+            from: fromEmail,
+            subject,
+            html: buildEmail(recipientFirstName, subject, body, appUrl, 'View gift ideas →', '/'),
+          });
+          logger.info(`Shared birthday reminder → ${user.email}: ${name} (from ${partnerUid}) in ${days}d`);
+          emailsSent++;
+        }
+
+        // Partner's non-private events
+        const partnerEventsSnap = await db.collection(`users/${partnerUid}/events`).get();
+        for (const eventDoc of partnerEventsSnap.docs) {
+          const data = eventDoc.data();
+          if (data.isPrivate) continue;
+          const date = data.date as string | undefined;
+          const eventName = data.name as string | undefined;
+          const personIds = (data.personIds as string[]) ?? [];
+          if (!date || !eventName) continue;
+
+          const days = daysUntilAnnual(date);
+          if (!REMINDER_DAYS.includes(days)) continue;
+
+          // Resolve names from partner's people collection
+          const names: string[] = [];
+          for (const pid of personIds) {
+            const pDoc = await db.doc(`users/${partnerUid}/people/${pid}`).get();
+            if (pDoc.exists) names.push((pDoc.data()?.name as string).split(' ')[0]);
+          }
+          const namesLabel = names.length > 0 ? names.join(' & ') + '\'s ' : '';
+
+          const daysText = `${days} days`;
+          const subject = `Reminder: ${namesLabel}${eventName} is in ${daysText}`;
+          const body = `Just a heads-up — <strong>${namesLabel}${eventName}</strong> is in <strong>${daysText}</strong>.`;
+
+          await sgMail.send({
+            to: user.email,
+            from: fromEmail,
+            subject,
+            html: buildEmail(recipientFirstName, subject, body, appUrl, 'Open Gifted →', '/'),
+          });
+          logger.info(`Shared event reminder → ${user.email}: ${eventName} (from ${partnerUid}) in ${days}d`);
+          emailsSent++;
+        }
       }
 
       // ── Christmas reminder ──────────────────────────────────────────────

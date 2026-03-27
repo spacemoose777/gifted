@@ -6,12 +6,15 @@ import {
   deleteDoc,
   getDocs,
   getDoc,
+  setDoc,
   query,
   orderBy,
+  arrayUnion,
+  arrayRemove,
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { encrypt, decrypt } from '@/lib/crypto';
-import type { Person, Gift, WishlistItem, CalendarEvent } from '@/types';
+import type { Person, Gift, WishlistItem, CalendarEvent, Family } from '@/types';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -25,6 +28,7 @@ async function decryptPerson(id: string, data: Record<string, unknown>): Promise
     name: data.name as string,
     birthDate: data.birthDate as string,
     notes: data.notes ? await decrypt(data.notes as string) : '',
+    isPrivate: (data.isPrivate as boolean) || false,
     createdAt: data.createdAt as string,
     updatedAt: data.updatedAt as string,
   };
@@ -79,12 +83,13 @@ export async function getPerson(userId: string, personId: string): Promise<Perso
 
 export async function addPerson(
   userId: string,
-  data: Pick<Person, 'name' | 'birthDate' | 'notes'>,
+  data: Pick<Person, 'name' | 'birthDate' | 'notes'> & { isPrivate?: boolean },
 ): Promise<string> {
   const ref = await addDoc(collection(db, 'users', userId, 'people'), {
     name: data.name,
     birthDate: data.birthDate,
     notes: await encrypt(data.notes),
+    isPrivate: data.isPrivate ?? false,
     createdAt: now(),
     updatedAt: now(),
   });
@@ -94,11 +99,12 @@ export async function addPerson(
 export async function updatePerson(
   userId: string,
   personId: string,
-  data: Partial<Pick<Person, 'name' | 'birthDate' | 'notes'>>,
+  data: Partial<Pick<Person, 'name' | 'birthDate' | 'notes' | 'isPrivate'>>,
 ): Promise<void> {
-  const updates: Record<string, string> = { updatedAt: now() };
+  const updates: Record<string, unknown> = { updatedAt: now() };
   if (data.name !== undefined) updates.name = data.name;
   if (data.birthDate !== undefined) updates.birthDate = data.birthDate;
+  if (data.isPrivate !== undefined) updates.isPrivate = data.isPrivate;
   if (data.notes !== undefined) updates.notes = await encrypt(data.notes);
   await updateDoc(doc(db, 'users', userId, 'people', personId), updates);
 }
@@ -237,10 +243,11 @@ export async function getEvents(userId: string): Promise<CalendarEvent[]> {
 
 export async function addEvent(
   userId: string,
-  data: Pick<CalendarEvent, 'name' | 'date' | 'type' | 'personIds'>,
+  data: Pick<CalendarEvent, 'name' | 'date' | 'type' | 'personIds'> & { isPrivate?: boolean },
 ): Promise<string> {
   const ref = await addDoc(collection(db, 'users', userId, 'events'), {
     ...data,
+    isPrivate: data.isPrivate ?? false,
     createdAt: now(),
     updatedAt: now(),
   });
@@ -250,7 +257,7 @@ export async function addEvent(
 export async function updateEvent(
   userId: string,
   eventId: string,
-  data: Partial<Pick<CalendarEvent, 'name' | 'date' | 'type' | 'personIds'>>,
+  data: Partial<Pick<CalendarEvent, 'name' | 'date' | 'type' | 'personIds' | 'isPrivate'>>,
 ): Promise<void> {
   await updateDoc(doc(db, 'users', userId, 'events', eventId), {
     ...data,
@@ -260,4 +267,42 @@ export async function updateEvent(
 
 export async function deleteEvent(userId: string, eventId: string): Promise<void> {
   await deleteDoc(doc(db, 'users', userId, 'events', eventId));
+}
+
+// ─── Family ──────────────────────────────────────────────────────────────────
+
+function randomCode(): string {
+  return Math.random().toString(36).slice(2, 8).toUpperCase();
+}
+
+export async function createFamily(userId: string): Promise<{ familyId: string; inviteCode: string }> {
+  const inviteCode = randomCode();
+  const familyRef = await addDoc(collection(db, 'families'), {
+    createdBy: userId,
+    createdAt: now(),
+    inviteCode,
+    memberUids: [userId],
+  });
+  await setDoc(doc(db, 'inviteCodes', inviteCode), { familyId: familyRef.id });
+  await setDoc(doc(db, 'users', userId), { familyId: familyRef.id }, { merge: true });
+  return { familyId: familyRef.id, inviteCode };
+}
+
+export async function joinFamilyByCode(userId: string, code: string): Promise<void> {
+  const codeSnap = await getDoc(doc(db, 'inviteCodes', code.toUpperCase()));
+  if (!codeSnap.exists()) throw new Error('Invalid invite code. Please check and try again.');
+  const familyId = codeSnap.data().familyId as string;
+  await updateDoc(doc(db, 'families', familyId), { memberUids: arrayUnion(userId) });
+  await setDoc(doc(db, 'users', userId), { familyId }, { merge: true });
+}
+
+export async function leaveFamily(userId: string, familyId: string): Promise<void> {
+  await updateDoc(doc(db, 'families', familyId), { memberUids: arrayRemove(userId) });
+  await setDoc(doc(db, 'users', userId), { familyId: null }, { merge: true });
+}
+
+export async function getFamily(familyId: string): Promise<Family | null> {
+  const snap = await getDoc(doc(db, 'families', familyId));
+  if (!snap.exists()) return null;
+  return { id: snap.id, ...snap.data() } as Family;
 }

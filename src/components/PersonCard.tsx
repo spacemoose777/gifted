@@ -19,25 +19,44 @@ function formatDate(iso: string): string {
   return year === 0 ? base : `${base} ${year}`;
 }
 
-export function PersonCard({ person }: { person: Person }) {
+interface PersonCardProps {
+  person: Person;
+  /** True when this person belongs to a family member (read-only, no link). */
+  isShared?: boolean;
+}
+
+export function PersonCard({ person, isShared }: PersonCardProps) {
   const days = daysUntilBirthday(person.birthDate);
   const upcoming = days <= 30;
 
-  return (
-    <Link href={`/people/${person.id}`}>
-      <div className="rounded-2xl bg-white p-4 shadow-sm hover:shadow-md transition-shadow cursor-pointer">
-        <div className="flex items-start justify-between gap-2">
-          <div>
+  const inner = (
+    <div className={`rounded-2xl bg-white p-4 shadow-sm transition-shadow ${isShared ? 'opacity-90' : 'hover:shadow-md cursor-pointer'}`}>
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <div className="flex items-center gap-2">
             <p className="font-semibold text-purple-900">{person.name}</p>
-            <p className="mt-0.5 text-xs text-purple-400">{formatDate(person.birthDate)}</p>
+            {isShared && (
+              <span className="rounded-full bg-purple-100 px-2 py-0.5 text-xs text-purple-500">
+                Shared
+              </span>
+            )}
+            {!isShared && person.isPrivate && (
+              <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-500">
+                Private
+              </span>
+            )}
           </div>
-          {upcoming && (
-            <span className="shrink-0 rounded-full bg-orange-100 px-2.5 py-0.5 text-xs font-medium text-orange-600">
-              {days === 0 ? '🎂 Today!' : `${days}d`}
-            </span>
-          )}
+          <p className="mt-0.5 text-xs text-purple-400">{formatDate(person.birthDate)}</p>
         </div>
+        {upcoming && (
+          <span className="shrink-0 rounded-full bg-orange-100 px-2.5 py-0.5 text-xs font-medium text-orange-600">
+            {days === 0 ? '🎂 Today!' : `${days}d`}
+          </span>
+        )}
       </div>
-    </Link>
+    </div>
   );
+
+  if (isShared) return inner;
+  return <Link href={`/people/${person.id}`}>{inner}</Link>;
 }

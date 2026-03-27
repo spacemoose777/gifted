@@ -36,7 +36,7 @@ export default function PersonDetailPage({ params }: { params: { personId: strin
   const router = useRouter();
   const { gifts, loading: giftsLoading } = useGifts(user?.uid, params.personId);
   const { events: allEvents } = useEvents(user?.uid);
-  const { people } = usePeople(user?.uid);
+  const { people } = usePeople(user?.uid, []);
 
   const [person, setPerson] = useState<Person | null>(null);
   const [personLoading, setPersonLoading] = useState(true);
@@ -89,7 +89,7 @@ export default function PersonDetailPage({ params }: { params: { personId: strin
     });
   }
 
-  async function handleEditPerson(data: Pick<Person, 'name' | 'birthDate' | 'notes'>) {
+  async function handleEditPerson(data: Pick<Person, 'name' | 'birthDate' | 'notes'> & { isPrivate: boolean }) {
     if (!user) return;
     await updatePerson(user.uid, params.personId, data);
     setPerson((prev) => (prev ? { ...prev, ...data } : prev));
@@ -337,7 +337,7 @@ export default function PersonDetailPage({ params }: { params: { personId: strin
       {showEditPerson && (
         <Modal title="Edit person" onClose={() => setShowEditPerson(false)}>
           <PersonForm
-            initial={{ name: person.name, birthDate: person.birthDate, notes: person.notes }}
+            initial={{ name: person.name, birthDate: person.birthDate, notes: person.notes, isPrivate: person.isPrivate }}
             onSubmit={handleEditPerson}
             onCancel={() => setShowEditPerson(false)}
           />

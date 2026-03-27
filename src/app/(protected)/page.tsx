@@ -4,6 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/hooks/useAuth';
 import { usePeople } from '@/hooks/usePeople';
+import { useFamily } from '@/hooks/useFamily';
 import { useWishlist } from '@/hooks/useWishlist';
 import { addPerson, addWishlistItem, updateWishlistItem, deleteWishlistItem } from '@/lib/firestore';
 import { PersonCard } from '@/components/PersonCard';
@@ -16,11 +17,13 @@ import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
 import type { Person, WishlistItem } from '@/types';
 
+type PersonFormData = Pick<Person, 'name' | 'birthDate' | 'notes'> & { isPrivate: boolean };
 type WishlistFormData = Pick<WishlistItem, 'itemName' | 'description' | 'type' | 'options' | 'watchOuts' | 'priceRange' | 'acquired'>;
 
 export default function DashboardPage() {
   const { user } = useAuth();
-  const { people, loading: peopleLoading } = usePeople(user?.uid);
+  const { partnerUids } = useFamily(user?.uid);
+  const { people, sharedPeople, loading: peopleLoading } = usePeople(user?.uid, partnerUids);
   const { items, loading: wishlistLoading } = useWishlist(user?.uid);
 
   const [search, setSearch] = useState('');
@@ -28,11 +31,12 @@ export default function DashboardPage() {
   const [showAddWish, setShowAddWish] = useState(false);
   const [editingWish, setEditingWish] = useState<WishlistItem | null>(null);
 
-  const filtered = people.filter((p) =>
-    p.name.toLowerCase().includes(search.toLowerCase()),
-  );
+  const searchLower = search.toLowerCase();
+  const filteredOwn = people.filter((p) => p.name.toLowerCase().includes(searchLower));
+  const filteredShared = sharedPeople.filter((p) => p.name.toLowerCase().includes(searchLower));
+  const hasResults = filteredOwn.length > 0 || filteredShared.length > 0;
 
-  async function handleAddPerson(data: Pick<Person, 'name' | 'birthDate' | 'notes'>) {
+  async function handleAddPerson(data: PersonFormData) {
     if (!user) return;
     await addPerson(user.uid, data);
     setShowAddPerson(false);
@@ -81,14 +85,17 @@ export default function DashboardPage() {
         <div className="flex justify-center py-10">
           <div className="h-8 w-8 animate-spin rounded-full border-4 border-purple-200 border-t-purple-500" />
         </div>
-      ) : filtered.length === 0 ? (
+      ) : !hasResults ? (
         <div className="py-10 text-center text-purple-400">
           {search ? 'No people match your search.' : 'No people yet. Add someone!'}
         </div>
       ) : (
         <div className="flex flex-col gap-3">
-          {filtered.map((person) => (
+          {filteredOwn.map((person) => (
             <PersonCard key={person.id} person={person} />
+          ))}
+          {filteredShared.map((person) => (
+            <PersonCard key={`shared-${person.id}`} person={person} isShared />
           ))}
         </div>
       )}
