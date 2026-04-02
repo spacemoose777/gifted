@@ -19,6 +19,8 @@ export interface Person {
   birthDate: string;
   notes: string; // stored encrypted, decrypted at read
   isPrivate?: boolean; // false (default) = shared with family; true = owner only
+  // Days before birthday to send reminders; 0 = on the day. Default [30, 14, 7, 0].
+  reminderDays?: number[];
   createdAt: string;
   updatedAt: string;
 }

@@ -19,8 +19,9 @@ const APP_URL = defineString('APP_URL');
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-const REMINDER_DAYS = [30, 14, 7];
+const DEFAULT_REMINDER_DAYS = [30, 14, 7, 0];
 const TIMEZONE = 'Pacific/Auckland';
+const MILESTONE_AGES = new Set([16, 18, 21, 30, 40, 50, 60, 70, 80, 90, 100]);
 
 /**
  * Returns today's date in Auckland local time as a UTC midnight Date.
@@ -49,6 +50,23 @@ function daysUntilAnnual(mmdd: string): number {
 function daysUntilBirthday(birthDate: string): number {
   const parts = birthDate.split('-');
   return daysUntilAnnual(`${parts[1]}-${parts[2]}`);
+}
+
+/** Returns the milestone age at next birthday, or null if not a milestone / year unknown. */
+function getMilestoneAge(birthDate: string): number | null {
+  const [year, month, day] = birthDate.split('-').map(Number);
+  if (year === 0) return null; // year unknown
+  const today = todayInAuckland();
+  const next = new Date(Date.UTC(today.getUTCFullYear(), month - 1, day));
+  if (next < today) next.setUTCFullYear(today.getUTCFullYear() + 1);
+  const age = next.getUTCFullYear() - year;
+  return MILESTONE_AGES.has(age) ? age : null;
+}
+
+function ordinal(n: number): string {
+  const s = ['th', 'st', 'nd', 'rd'];
+  const v = n % 100;
+  return n + (s[(v - 20) % 10] ?? s[v] ?? s[0]);
 }
 
 function firstNameFromEmail(email: string): string {
@@ -116,18 +134,6 @@ export const sendBirthdayReminders = onSchedule(
 
     let emailsSent = 0;
 
-    // ── Helper: send birthday reminder for one person to one recipient ──────
-    async function sendBirthdayEmail(
-      toEmail: string,
-      recipientFirstName: string,
-      personName: string,
-    ) {
-      const days = daysUntilBirthday(/* resolved below */ '');
-      void days; // computed per call — see inline below
-    }
-    // (sendBirthdayEmail not used directly — inlined below for clarity)
-    void sendBirthdayEmail;
-
     // ── Helper: get partner UIDs for a user ─────────────────────────────────
     async function getPartnerUids(uid: string): Promise<string[]> {
       const userDoc = await db.doc(`users/${uid}`).get();
@@ -153,19 +159,30 @@ export const sendBirthdayReminders = onSchedule(
         const name = data.name as string | undefined;
         if (!birthDate || !name) continue;
 
+        const reminderDays = (data.reminderDays as number[] | undefined) ?? DEFAULT_REMINDER_DAYS;
         const days = daysUntilBirthday(birthDate);
-        const isToday = days === 0;
-        if (!isToday && !REMINDER_DAYS.includes(days)) continue;
+        if (!reminderDays.includes(days)) continue;
 
+        const milestoneAge = getMilestoneAge(birthDate);
         let subject: string;
         let body: string;
-        if (isToday) {
-          subject = `Today is ${name}'s birthday! 🎂`;
-          body = `It's <strong>${name}</strong>'s birthday today! Wishing them a wonderful day 🎉`;
+        if (days === 0) {
+          if (milestoneAge) {
+            subject = `Today is ${name}'s ${ordinal(milestoneAge)} birthday! 🎂`;
+            body = `It's <strong>${name}'s ${ordinal(milestoneAge)} birthday</strong> today — what a milestone! 🎉`;
+          } else {
+            subject = `Today is ${name}'s birthday! 🎂`;
+            body = `It's <strong>${name}</strong>'s birthday today! Wishing them a wonderful day 🎉`;
+          }
         } else {
           const daysText = `${days} days`;
-          subject = `Reminder: ${name}'s birthday is in ${daysText}`;
-          body = `Just a heads-up — <strong>${name}</strong>'s birthday is in <strong>${daysText}</strong>. Now's a great time to sort out a gift!`;
+          if (milestoneAge) {
+            subject = `Milestone: ${name} is turning ${ordinal(milestoneAge)} in ${daysText}!`;
+            body = `<strong>${name}</strong> is turning <strong>${ordinal(milestoneAge)}</strong> in <strong>${daysText}</strong>. This is a big one — time to start planning something special!`;
+          } else {
+            subject = `Reminder: ${name}'s birthday is in ${daysText}`;
+            body = `Just a heads-up — <strong>${name}</strong>'s birthday is in <strong>${daysText}</strong>. Now's a great time to sort out a gift!`;
+          }
         }
 
         await sgMail.send({
@@ -174,7 +191,7 @@ export const sendBirthdayReminders = onSchedule(
           subject,
           html: buildEmail(recipientFirstName, subject, body, appUrl, 'View gift ideas →', '/'),
         });
-        logger.info(`Birthday reminder → ${user.email}: ${name} in ${days}d`);
+        logger.info(`Birthday reminder → ${user.email}: ${name} in ${days}d${milestoneAge ? ` (${milestoneAge}th)` : ''}`);
         emailsSent++;
       }
 
@@ -216,7 +233,8 @@ export const sendBirthdayReminders = onSchedule(
       const partnerUids = await getPartnerUids(user.uid);
 
       for (const partnerUid of partnerUids) {
-        // Partner's non-private people
+        // Partner's non-private people — use the RECIPIENT's reminder preferences
+        // (the person who owns the entry controls the schedule; recipient gets same intervals)
         const partnerPeopleSnap = await db.collection(`users/${partnerUid}/people`).get();
         for (const personDoc of partnerPeopleSnap.docs) {
           const data = personDoc.data();
@@ -225,19 +243,30 @@ export const sendBirthdayReminders = onSchedule(
           const name = data.name as string | undefined;
           if (!birthDate || !name) continue;
 
+          const reminderDays = (data.reminderDays as number[] | undefined) ?? DEFAULT_REMINDER_DAYS;
           const days = daysUntilBirthday(birthDate);
-          const isToday = days === 0;
-          if (!isToday && !REMINDER_DAYS.includes(days)) continue;
+          if (!reminderDays.includes(days)) continue;
 
+          const milestoneAge = getMilestoneAge(birthDate);
           let subject: string;
           let body: string;
-          if (isToday) {
-            subject = `Today is ${name}'s birthday! 🎂`;
-            body = `It's <strong>${name}</strong>'s birthday today! Wishing them a wonderful day 🎉`;
+          if (days === 0) {
+            if (milestoneAge) {
+              subject = `Today is ${name}'s ${ordinal(milestoneAge)} birthday! 🎂`;
+              body = `It's <strong>${name}'s ${ordinal(milestoneAge)} birthday</strong> today — what a milestone! 🎉`;
+            } else {
+              subject = `Today is ${name}'s birthday! 🎂`;
+              body = `It's <strong>${name}</strong>'s birthday today! Wishing them a wonderful day 🎉`;
+            }
           } else {
             const daysText = `${days} days`;
-            subject = `Reminder: ${name}'s birthday is in ${daysText}`;
-            body = `Just a heads-up — <strong>${name}</strong>'s birthday is in <strong>${daysText}</strong>. Now's a great time to sort out a gift!`;
+            if (milestoneAge) {
+              subject = `Milestone: ${name} is turning ${ordinal(milestoneAge)} in ${daysText}!`;
+              body = `<strong>${name}</strong> is turning <strong>${ordinal(milestoneAge)}</strong> in <strong>${daysText}</strong>. This is a big one — time to start planning something special!`;
+            } else {
+              subject = `Reminder: ${name}'s birthday is in ${daysText}`;
+              body = `Just a heads-up — <strong>${name}</strong>'s birthday is in <strong>${daysText}</strong>. Now's a great time to sort out a gift!`;
+            }
           }
 
           await sgMail.send({
@@ -246,7 +275,7 @@ export const sendBirthdayReminders = onSchedule(
             subject,
             html: buildEmail(recipientFirstName, subject, body, appUrl, 'View gift ideas →', '/'),
           });
-          logger.info(`Shared birthday reminder → ${user.email}: ${name} (from ${partnerUid}) in ${days}d`);
+          logger.info(`Shared birthday reminder → ${user.email}: ${name} (from ${partnerUid}) in ${days}d${milestoneAge ? ` (${milestoneAge}th)` : ''}`);
           emailsSent++;
         }
 
@@ -288,7 +317,7 @@ export const sendBirthdayReminders = onSchedule(
 
       // ── Christmas reminder ──────────────────────────────────────────────
       const christmasDays = daysUntilAnnual('12-25');
-      if ((REMINDER_DAYS as number[]).includes(christmasDays)) {
+      if ([30, 14, 7].includes(christmasDays)) {
         const daysText = `${christmasDays} days`;
         const subject = `Reminder: Christmas is in ${daysText}`;
         const body = `Christmas is in <strong>${daysText}</strong>. Time to check your gift lists!`;

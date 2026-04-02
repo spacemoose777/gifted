@@ -89,7 +89,7 @@ export default function PersonDetailPage({ params }: { params: { personId: strin
     });
   }
 
-  async function handleEditPerson(data: Pick<Person, 'name' | 'birthDate' | 'notes'> & { isPrivate: boolean }) {
+  async function handleEditPerson(data: Pick<Person, 'name' | 'birthDate' | 'notes'> & { isPrivate: boolean; reminderDays: number[] }) {
     if (!user) return;
     await updatePerson(user.uid, params.personId, data);
     setPerson((prev) => (prev ? { ...prev, ...data } : prev));
@@ -337,7 +337,7 @@ export default function PersonDetailPage({ params }: { params: { personId: strin
       {showEditPerson && (
         <Modal title="Edit person" onClose={() => setShowEditPerson(false)}>
           <PersonForm
-            initial={{ name: person.name, birthDate: person.birthDate, notes: person.notes, isPrivate: person.isPrivate }}
+            initial={{ name: person.name, birthDate: person.birthDate, notes: person.notes, isPrivate: person.isPrivate, reminderDays: person.reminderDays }}
             onSubmit={handleEditPerson}
             onCancel={() => setShowEditPerson(false)}
           />

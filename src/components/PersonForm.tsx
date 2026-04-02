@@ -30,10 +30,18 @@ function parseBirthDate(birthDate: string) {
   return { yearUnknown: false, fullDate: birthDate, month: '01', day: '01' };
 }
 
-type PersonFormData = Pick<Person, 'name' | 'birthDate' | 'notes'> & { isPrivate: boolean };
+const REMINDER_OPTIONS = [
+  { days: 30, label: '30 days before' },
+  { days: 14, label: '14 days before' },
+  { days: 7,  label: '7 days before' },
+  { days: 0,  label: 'On the day' },
+];
+const DEFAULT_REMINDER_DAYS = [30, 14, 7, 0];
+
+type PersonFormData = Pick<Person, 'name' | 'birthDate' | 'notes'> & { isPrivate: boolean; reminderDays: number[] };
 
 interface PersonFormProps {
-  initial?: Pick<Person, 'name' | 'birthDate' | 'notes'> & { isPrivate?: boolean };
+  initial?: Pick<Person, 'name' | 'birthDate' | 'notes'> & { isPrivate?: boolean; reminderDays?: number[] };
   onSubmit: (data: PersonFormData) => Promise<void>;
   onCancel: () => void;
 }
@@ -48,8 +56,15 @@ export function PersonForm({ initial, onSubmit, onCancel }: PersonFormProps) {
   const [month, setMonth] = useState(parsed.month);
   const [day, setDay] = useState(parsed.day);
   const [isPrivate, setIsPrivate] = useState(initial?.isPrivate ?? false);
+  const [reminderDays, setReminderDays] = useState<number[]>(initial?.reminderDays ?? DEFAULT_REMINDER_DAYS);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+
+  function toggleReminder(days: number) {
+    setReminderDays((prev) =>
+      prev.includes(days) ? prev.filter((d) => d !== days) : [...prev, days],
+    );
+  }
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -61,7 +76,7 @@ export function PersonForm({ initial, onSubmit, onCancel }: PersonFormProps) {
     }
     setLoading(true);
     try {
-      await onSubmit({ name: name.trim(), birthDate, notes: notes.trim(), isPrivate });
+      await onSubmit({ name: name.trim(), birthDate, notes: notes.trim(), isPrivate, reminderDays });
     } catch {
       setError('Something went wrong. Please try again.');
     } finally {
@@ -130,6 +145,23 @@ export function PersonForm({ initial, onSubmit, onCancel }: PersonFormProps) {
         value={notes}
         onChange={(e) => setNotes(e.target.value)}
       />
+
+      <div className="flex flex-col gap-2">
+        <span className="text-sm font-medium text-purple-900">Birthday reminders</span>
+        <div className="flex flex-col gap-1.5">
+          {REMINDER_OPTIONS.map(({ days, label }) => (
+            <label key={days} className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={reminderDays.includes(days)}
+                onChange={() => toggleReminder(days)}
+                className="rounded accent-purple-500"
+              />
+              <span className="text-sm text-purple-700">{label}</span>
+            </label>
+          ))}
+        </div>
+      </div>
 
       <label className="flex items-center gap-2 cursor-pointer">
         <input

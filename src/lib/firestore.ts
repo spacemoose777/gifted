@@ -22,6 +22,8 @@ function now(): string {
   return new Date().toISOString();
 }
 
+const DEFAULT_REMINDER_DAYS = [30, 14, 7, 0];
+
 async function decryptPerson(id: string, data: Record<string, unknown>): Promise<Person> {
   return {
     id,
@@ -29,6 +31,7 @@ async function decryptPerson(id: string, data: Record<string, unknown>): Promise
     birthDate: data.birthDate as string,
     notes: data.notes ? await decrypt(data.notes as string) : '',
     isPrivate: (data.isPrivate as boolean) || false,
+    reminderDays: (data.reminderDays as number[] | undefined) ?? DEFAULT_REMINDER_DAYS,
     createdAt: data.createdAt as string,
     updatedAt: data.updatedAt as string,
   };
@@ -83,13 +86,14 @@ export async function getPerson(userId: string, personId: string): Promise<Perso
 
 export async function addPerson(
   userId: string,
-  data: Pick<Person, 'name' | 'birthDate' | 'notes'> & { isPrivate?: boolean },
+  data: Pick<Person, 'name' | 'birthDate' | 'notes'> & { isPrivate?: boolean; reminderDays?: number[] },
 ): Promise<string> {
   const ref = await addDoc(collection(db, 'users', userId, 'people'), {
     name: data.name,
     birthDate: data.birthDate,
     notes: await encrypt(data.notes),
     isPrivate: data.isPrivate ?? false,
+    reminderDays: data.reminderDays ?? [30, 14, 7, 0],
     createdAt: now(),
     updatedAt: now(),
   });
@@ -99,12 +103,13 @@ export async function addPerson(
 export async function updatePerson(
   userId: string,
   personId: string,
-  data: Partial<Pick<Person, 'name' | 'birthDate' | 'notes' | 'isPrivate'>>,
+  data: Partial<Pick<Person, 'name' | 'birthDate' | 'notes' | 'isPrivate' | 'reminderDays'>>,
 ): Promise<void> {
   const updates: Record<string, unknown> = { updatedAt: now() };
   if (data.name !== undefined) updates.name = data.name;
   if (data.birthDate !== undefined) updates.birthDate = data.birthDate;
   if (data.isPrivate !== undefined) updates.isPrivate = data.isPrivate;
+  if (data.reminderDays !== undefined) updates.reminderDays = data.reminderDays;
   if (data.notes !== undefined) updates.notes = await encrypt(data.notes);
   await updateDoc(doc(db, 'users', userId, 'people', personId), updates);
 }
