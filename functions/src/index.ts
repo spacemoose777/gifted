@@ -206,7 +206,7 @@ export const sendBirthdayReminders = onSchedule(
         if (!date || !eventName) continue;
 
         const days = daysUntilAnnual(date);
-        if (!REMINDER_DAYS.includes(days)) continue;
+        if (![30, 14, 7].includes(days)) continue;
 
         const names: string[] = [];
         for (const pid of personIds) {
@@ -290,7 +290,7 @@ export const sendBirthdayReminders = onSchedule(
           if (!date || !eventName) continue;
 
           const days = daysUntilAnnual(date);
-          if (!REMINDER_DAYS.includes(days)) continue;
+          if (![30, 14, 7].includes(days)) continue;
 
           // Resolve names from partner's people collection
           const names: string[] = [];
