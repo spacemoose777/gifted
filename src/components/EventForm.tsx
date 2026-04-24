@@ -121,7 +121,7 @@ export function EventForm({
       {allPeople.length > 1 && (
         <div className="flex flex-col gap-1">
           <p className="text-sm font-medium text-purple-900">People involved</p>
-          <div className="flex flex-col gap-1.5 rounded-xl border border-purple-200 bg-white p-3">
+          <div className="flex flex-col gap-1.5 rounded-xl border border-purple-200 bg-white p-3 max-h-48 overflow-y-auto">
             {allPeople.map((person) => (
               <label
                 key={person.id}
